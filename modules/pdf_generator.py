@@ -766,9 +766,12 @@ class PDFGenerator:
                 try:
                     from urllib.parse import urlparse
                     domain = urlparse(domain).netloc or domain
+                    # Strip www. prefix for cleaner display
+                    if domain.startswith("www."):
+                        domain = domain[4:]
                 except Exception:
                     pass
-                header.append(Paragraph(domain[:18], styles["caption_white"]))
+                header.append(Paragraph(domain, styles["caption_white"]))
 
             signals_to_compare = [
                 ("SEO Score",     str(site_data.get("overall_score", 0)),
