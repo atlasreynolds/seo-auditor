@@ -9,7 +9,7 @@ from modules.scraper import SEOScraper
 from modules.ai_analyzer import AIAnalyzer
 from modules.pdf_generator import PDFGenerator
 
-load_dotenv()
+load_dotenv(override=True)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-change-in-prod")
