@@ -36,7 +36,7 @@ BOT_PROTECTION_SIGNALS = [
     "verify you are human", "please wait", "ray id",
 ]
 
-TIMEOUT = 15
+TIMEOUT = 8
 
 # JS-framework fingerprints — these sites render content client-side so
 # BeautifulSoup sees mostly empty HTML even when real content exists.
