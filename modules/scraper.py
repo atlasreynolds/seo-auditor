@@ -38,6 +38,22 @@ BOT_PROTECTION_SIGNALS = [
 
 TIMEOUT = 15
 
+# JS-framework fingerprints — these sites render content client-side so
+# BeautifulSoup sees mostly empty HTML even when real content exists.
+JS_FRAMEWORK_SIGNALS = [
+    "wix.com", "parastorage.com",          # Wix
+    "squarespace.com",                      # Squarespace
+    "weebly.com",                           # Weebly
+    "shopify.com",                          # Shopify
+    "godaddy.com/gdcorp",                   # GoDaddy Website Builder
+    "editmysite.com",                       # GoDaddy / Weebly
+    "jimdo.com",                            # Jimdo
+]
+
+# Secondary paths to try when homepage NAP signals are unverifiable
+NAP_FALLBACK_PATHS = ["/contact", "/contact-us", "/about", "/about-us",
+                      "/hours", "/location", "/find-us", "/info"]
+
 
 class SEOScraper:
     def analyze(self, url: str) -> dict:
@@ -206,20 +222,37 @@ class SEOScraper:
         # ── 10. NAP (Name, Address, Phone) ────────────────────────────────────
         page_text = soup.get_text(" ", strip=True)
 
-        # Phone: check visible text patterns AND tel: href links
+        # Detect JS-rendered frameworks — content won't be in static HTML
+        is_js_rendered = any(sig in html for sig in JS_FRAMEWORK_SIGNALS)
+        signals["is_js_rendered"] = is_js_rendered
+
+        # Content is unverifiable if bot-protected OR JS-rendered with very thin text
+        page_word_count_raw = len(page_text.split())
+        content_unverifiable = bot_protected or (is_js_rendered and page_word_count_raw < 150)
+        signals["content_unverifiable"] = content_unverifiable
+
         phone_pattern = re.compile(
             r'(\+?1?[\s\-\.]?\(?\d{3}\)?[\s\-\.]?\d{3}[\s\-\.]?\d{4})'
         )
+
+        # Phone: check visible text, tel: links, AND inline <script> tag contents
         text_phones = phone_pattern.findall(page_text)
         tel_links = soup.find_all("a", href=re.compile(r'^tel:', re.I))
         tel_phones = [
             a["href"].replace("tel:", "").replace("tel:+1", "+1").strip()
             for a in tel_links if a.get("href")
         ]
-        phones = list(dict.fromkeys(tel_phones + text_phones))[:3]  # dedup, tel: first
+        # Also search script tag contents (Wix/Squarespace embed data in JS)
+        script_phones = []
+        for script in soup.find_all("script"):
+            script_text = script.string or ""
+            if len(script_text) > 20:
+                script_phones += phone_pattern.findall(script_text)
+
+        phones = list(dict.fromkeys(tel_phones + text_phones + script_phones))[:3]
         signals["phone_numbers"] = phones
 
-        # Address: check text keywords, zip codes, AND microdata/schema
+        # Address: check text keywords, zip codes, microdata/schema
         address_keywords = [
             "street", "st.", "st,", "ave", "avenue", "blvd", "boulevard",
             "drive", "dr.", "dr,", "road", "rd.", "rd,", "suite", "ste",
@@ -234,15 +267,68 @@ class SEOScraper:
             or bool(addr_microdata)
             or any(kw in page_text.lower() for kw in address_keywords)
         )
+
+        # ── Hours of operation detection ──────────────────────────────────────
+        hours_patterns = [
+            re.compile(r'\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b', re.I),
+            re.compile(r'\b\d{1,2}(:\d{2})?\s*(am|pm)\b', re.I),
+            re.compile(r'\bhours\s*[:\-]', re.I),
+            re.compile(r'\bopen\s+(daily|7\s*days|monday)', re.I),
+            re.compile(r'\bclosed\s+on\b', re.I),
+        ]
+        has_hours = any(p.search(page_text) for p in hours_patterns)
+
+        # ── Menu detection ────────────────────────────────────────────────────
+        menu_links = [
+            a for a in all_links if a.get("href") and
+            any(kw in (a.get("href", "") + a.get_text("", strip=True)).lower()
+                for kw in ["menu", "food", "drink", "specials"])
+        ]
+        has_menu = bool(menu_links) or any(
+            kw in page_text.lower() for kw in ["our menu", "view menu", "full menu", "menu items"]
+        )
+
+        # ── Secondary page fallback for unverifiable / thin content ───────────
+        if content_unverifiable or (not phones and not has_address):
+            sec_text, sec_tel = self._fetch_secondary_nap(url)
+            if sec_text:
+                if not phones:
+                    text_phones2 = phone_pattern.findall(sec_text)
+                    phones = list(dict.fromkeys(sec_tel + text_phones2))[:3]
+                if not has_address:
+                    has_address = (
+                        bool(zip_pattern.search(sec_text))
+                        or any(kw in sec_text.lower() for kw in address_keywords)
+                    )
+                if not has_hours:
+                    has_hours = any(p.search(sec_text) for p in hours_patterns)
+                if not has_menu:
+                    has_menu = any(kw in sec_text.lower()
+                                   for kw in ["our menu", "view menu", "full menu"])
+
         signals["has_address_on_page"] = has_address
+        signals["has_hours"] = has_hours
+        signals["has_menu"] = has_menu
+
+        # ── Issue flags — softened when content could not be verified ─────────
+        unverifiable_suffix = (
+            " (Note: your site's security settings or JavaScript rendering may have "
+            "prevented our scanner from verifying this — please confirm manually)"
+        )
 
         if not phones:
-            issues.append({"severity": "high", "text": "No phone number visible on page — local customers need to call you easily. Add your phone prominently"})
+            text = "No phone number visible on page — local customers need to call you easily. Add your phone prominently"
+            if content_unverifiable:
+                text += unverifiable_suffix
+            issues.append({"severity": "high", "text": text})
         else:
             wins.append(f"Phone number found: {phones[0]}")
 
         if not has_address:
-            issues.append({"severity": "high", "text": "No street address found on page — your physical address helps Google verify your local presence"})
+            text = "No street address found on page — your physical address helps Google verify your local presence"
+            if content_unverifiable:
+                text += unverifiable_suffix
+            issues.append({"severity": "high", "text": text})
         else:
             wins.append("Street address detected on page")
 
@@ -270,10 +356,11 @@ class SEOScraper:
         # ── 13. Word Count ────────────────────────────────────────────────────
         words = page_text.split()
         signals["word_count"] = len(words)
-        if len(words) < 300:
-            issues.append({"severity": "medium", "text": f"Very thin content ({len(words)} words). Pages with 300+ words rank much better — describe your services in detail"})
-        elif len(words) > 500:
-            wins.append(f"Good content depth ({len(words)} words)")
+        if not content_unverifiable:
+            if len(words) < 300:
+                issues.append({"severity": "medium", "text": f"Very thin content ({len(words)} words). Pages with 300+ words rank much better — describe your services in detail"})
+            elif len(words) > 500:
+                wins.append(f"Good content depth ({len(words)} words)")
 
         # ── 14. Open Graph Tags ───────────────────────────────────────────────
         og_title = soup.find("meta", property="og:title")
@@ -321,6 +408,32 @@ class SEOScraper:
         result["raw"] = signals
 
         return result
+
+    def _fetch_secondary_nap(self, url: str) -> tuple:
+        """
+        Try secondary pages (/contact, /about, etc.) to find NAP signals
+        that may not be on the homepage (common with JS-rendered sites).
+        Returns (combined_text, tel_links_list).
+        """
+        base = urlparse(url)
+        combined_text = ""
+        combined_tel = []
+        for path in NAP_FALLBACK_PATHS:
+            try:
+                test_url = f"{base.scheme}://{base.netloc}{path}"
+                resp = requests.get(test_url, headers=HEADERS, timeout=8, allow_redirects=True)
+                if resp.status_code == 200 and len(resp.text) > 500:
+                    page_soup = BeautifulSoup(resp.text, "html.parser")
+                    page_lower = resp.text.lower()
+                    if any(s in page_lower for s in BOT_PROTECTION_SIGNALS):
+                        continue
+                    combined_text += " " + page_soup.get_text(" ", strip=True)
+                    for a in page_soup.find_all("a", href=re.compile(r'^tel:', re.I)):
+                        if a.get("href"):
+                            combined_tel.append(a["href"].replace("tel:", "").strip())
+            except Exception:
+                continue
+        return combined_text.strip(), combined_tel
 
     def find_competitors(self, business_name: str, city: str, category: str) -> list[str]:
         """
