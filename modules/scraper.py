@@ -455,6 +455,14 @@ class SEOScraper:
             "yellowpages.com", "bbb.org", "wikipedia.org", "reddit.com",
             "tripadvisor.com", "instagram.com", "twitter.com", "x.com",
             "bing.com", "duckduckgo.com", "linkedin.com", "mapquest.com",
+            # Health / directory / aggregator sites — not real local competitors
+            "webmd.com", "healthgrades.com", "zocdoc.com", "vitals.com",
+            "healthline.com", "mayoclinic.org", "doctors.com", "wellness.com",
+            "findadoctor.com", "doximity.com", "ratemds.com", "psychology.com",
+            "angi.com", "angieslist.com", "homeadvisor.com", "thumbtack.com",
+            "houzz.com", "bark.com", "dental.page", "dentalplans.com",
+            "1800dentist.com", "zocdoc.com", "nextdoor.com", "patch.com",
+            "yelp.com", "superpages.com", "manta.com", "citysearch.com",
         ]
 
         def _is_valid(u):

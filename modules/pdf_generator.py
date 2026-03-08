@@ -181,6 +181,8 @@ class PDFGenerator:
             "tag": ParagraphStyle("tag", parent=base["Normal"], fontSize=8,
                                    textColor=WHITE, fontName="Helvetica-Bold",
                                    alignment=TA_CENTER),
+            "caption_white": ParagraphStyle("caption_white", parent=base["Normal"], fontSize=9,
+                                             textColor=WHITE, fontName="Helvetica-Bold", spaceAfter=3),
         }
 
     # ── Cover ─────────────────────────────────────────────────────────────────
@@ -751,14 +753,14 @@ class PDFGenerator:
         if competitor_data:
             # ── Side-by-side comparison table ─────────────────────────────────
             elements.append(Paragraph(
-                "Here is how your site stacks up against the top local competitors Google returned "
+                "Here is how your site stacks up against the top local competitors from search results "
                 "for your business category and city:",
                 styles["body"]
             ))
             elements.append(Spacer(1, 0.08 * inch))
 
-            header = [Paragraph("<b>Signal</b>", styles["caption"]),
-                      Paragraph("<b>Your Site</b>", styles["caption"])]
+            header = [Paragraph("Signal", styles["caption_white"]),
+                      Paragraph("Your Site", styles["caption_white"])]
             for i, comp in enumerate(competitor_data[:3], 1):
                 domain = comp.get("url", f"Competitor {i}")
                 try:
@@ -766,7 +768,7 @@ class PDFGenerator:
                     domain = urlparse(domain).netloc or domain
                 except Exception:
                     pass
-                header.append(Paragraph(f"<b>{domain[:18]}</b>", styles["caption"]))
+                header.append(Paragraph(domain[:18], styles["caption_white"]))
 
             signals_to_compare = [
                 ("SEO Score",     str(site_data.get("overall_score", 0)),
