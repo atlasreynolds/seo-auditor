@@ -67,8 +67,8 @@ class PDFGenerator:
         competitor_data: list,
         ai_report: dict,
     ) -> str:
-        os.makedirs("reports", exist_ok=True)
-        path = os.path.join("reports", f"{audit_id}.pdf")
+        os.makedirs("/tmp/ar_reports", exist_ok=True)
+        path = os.path.join("/tmp/ar_reports", f"{audit_id}.pdf")
 
         doc = SimpleDocTemplate(
             path,

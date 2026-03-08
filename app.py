@@ -19,8 +19,22 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 AUDIT_PRICE_CENTS = 4900  # $49.00
 
-# In-memory store for completed audits (use Redis/DB in production)
-audit_store = {}
+# ── File-based audit store (survives across gunicorn workers) ─────────────────
+AUDIT_DIR = "/tmp/ar_audits"
+os.makedirs(AUDIT_DIR, exist_ok=True)
+
+
+def _save_audit(audit_id: str, data: dict):
+    with open(os.path.join(AUDIT_DIR, f"{audit_id}.json"), "w") as f:
+        json.dump(data, f)
+
+
+def _load_audit(audit_id: str) -> dict | None:
+    path = os.path.join(AUDIT_DIR, f"{audit_id}.json")
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        return json.load(f)
 
 
 @app.route("/")
@@ -71,14 +85,14 @@ def audit_preview():
 
         # Store full data keyed by a session token for after payment
         audit_id = str(uuid.uuid4())
-        audit_store[audit_id] = {
+        _save_audit(audit_id, {
             "url": url,
             "business_name": business_name,
             "city": city,
             "category": category,
             "site_data": site_data,
             "paid": False,
-        }
+        })
 
         return jsonify({"preview": preview, "audit_id": audit_id})
 
@@ -92,7 +106,8 @@ def create_payment_intent():
     data = request.get_json()
     audit_id = data.get("audit_id")
 
-    if not audit_id or audit_id not in audit_store:
+    audit = _load_audit(audit_id) if audit_id else None
+    if not audit:
         return jsonify({"error": "Invalid audit session"}), 400
 
     try:
@@ -114,7 +129,8 @@ def confirm_payment():
     payment_intent_id = data.get("payment_intent_id")
     audit_id = data.get("audit_id")
 
-    if not audit_id or audit_id not in audit_store:
+    audit = _load_audit(audit_id) if audit_id else None
+    if not audit:
         return jsonify({"error": "Invalid audit session"}), 400
 
     try:
@@ -126,7 +142,6 @@ def confirm_payment():
         if intent.metadata.get("audit_id") != audit_id:
             return jsonify({"error": "Payment mismatch"}), 400
 
-        audit = audit_store[audit_id]
         audit["paid"] = True
 
         # Run full competitor analysis + AI report
@@ -169,6 +184,7 @@ def confirm_payment():
             ai_report=ai_report,
         )
         audit["pdf_path"] = pdf_path
+        _save_audit(audit_id, audit)
 
         return jsonify({"success": True, "audit_id": audit_id})
 
@@ -227,11 +243,11 @@ def audit_demo():
             ai_report=ai_report,
         )
 
-        audit_store[audit_id] = {
+        _save_audit(audit_id, {
             "pdf_path": pdf_path,
             "paid": True,
             "business_name": business_name,
-        }
+        })
 
         return jsonify({"success": True, "audit_id": audit_id})
 
@@ -242,7 +258,7 @@ def audit_demo():
 @app.route("/api/audit/download/<audit_id>")
 def download_report(audit_id):
     """Download the generated PDF report."""
-    audit = audit_store.get(audit_id)
+    audit = _load_audit(audit_id)
     if not audit:
         return jsonify({"error": "Report not found"}), 404
     if not audit.get("paid"):
