@@ -5,6 +5,7 @@ Creates a professional, branded SEO audit report PDF using ReportLab.
 
 import os
 import re
+import html
 import pathlib
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
@@ -65,7 +66,7 @@ def _score_color(score):
 
 
 def _clean(text):
-    """Strip any JSON/markdown artifacts that might leak into text fields."""
+    """Strip any JSON/markdown artifacts and escape HTML entities for ReportLab."""
     if not text:
         return ""
     text = str(text).strip()
@@ -74,9 +75,10 @@ def _clean(text):
     if text.startswith('{') or text.startswith('['):
         m = re.search(r'"(?:summary|text)"\s*:\s*"([^"]*(?:\\.[^"]*)*)"', text)
         if m:
-            return m.group(1).replace('\\"', '"')
-        return ""
-    return text
+            text = m.group(1).replace('\\"', '"')
+        else:
+            return ""
+    return html.escape(text)
 
 
 class PDFGenerator:
@@ -449,7 +451,7 @@ class PDFGenerator:
             elements.append(sev_header)
             for issue in sev_issues:
                 row_table = Table(
-                    [[Paragraph(f"• {issue['text']}", styles["body"])]],
+                    [[Paragraph(f"• {_clean(issue['text'])}", styles["body"])]],
                     colWidths=[7 * inch],
                     style=TableStyle([
                         ("LEFTPADDING", (0, 0), (-1, -1), 12),
