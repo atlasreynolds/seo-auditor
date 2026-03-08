@@ -221,6 +221,7 @@ class SEOScraper:
 
         # ── 10. NAP (Name, Address, Phone) ────────────────────────────────────
         page_text = soup.get_text(" ", strip=True)
+        all_links = soup.find_all("a", href=True)  # needed by NAP + later checks
 
         # Detect JS-rendered frameworks — content won't be in static HTML
         is_js_rendered = any(sig in html for sig in JS_FRAMEWORK_SIGNALS)
@@ -342,7 +343,6 @@ class SEOScraper:
 
         # ── 12. Internal Links ────────────────────────────────────────────────
         base_domain = urlparse(url).netloc
-        all_links = soup.find_all("a", href=True)
         internal_links = [
             a for a in all_links
             if urlparse(urljoin(url, a["href"])).netloc == base_domain
