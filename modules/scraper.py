@@ -196,18 +196,49 @@ class SEOScraper:
             wins.append("Has viewport meta tag (mobile-friendly)")
 
         # ── 9. Local Business Schema ──────────────────────────────────────────
+        # Comprehensive set covering all business categories we support
+        LOCAL_SCHEMA_TYPES = {
+            # Generic
+            "LocalBusiness", "ProfessionalService",
+            # Food & Hospitality
+            "Restaurant", "FoodEstablishment", "CafeOrCoffeeShop", "Bakery",
+            "BarOrPub", "FastFoodRestaurant",
+            # Medical & Health
+            "MedicalBusiness", "MedicalClinic", "Dentist", "Physician",
+            "Chiropractor", "Optician", "Pharmacy", "VeterinaryCare",
+            "PhysicalTherapy", "Optometrist",
+            # Home Services
+            "Plumber", "Electrician", "HVACBusiness", "GeneralContractor",
+            "HomeAndConstructionBusiness", "LandscapingService", "HouseCleaner",
+            "Locksmith", "MovingCompany", "HousePainter", "RoofingContractor",
+            # Retail & Beauty
+            "Store", "HairSalon", "BeautySalon", "NailSalon",
+            "HealthAndBeautyBusiness",
+            # Auto
+            "AutoRepair", "AutoDealer", "AutoBodyShop",
+            # Fitness
+            "ExerciseGym", "SportsActivityLocation",
+            # Professional Services
+            "RealEstateAgent", "LegalService", "Lawyer", "AccountingService",
+            "FinancialService", "InsuranceAgency",
+        }
         schema_tags = soup.find_all("script", attrs={"type": "application/ld+json"})
         has_local_schema = False
         schema_types = []
         for tag in schema_tags:
             try:
                 data = json.loads(tag.string or "")
-                schema_type = data.get("@type", "")
-                schema_types.append(schema_type)
-                if schema_type in ("LocalBusiness", "Restaurant", "MedicalBusiness",
-                                   "Dentist", "Plumber", "RealEstateAgent", "Store",
-                                   "HealthAndBeautyBusiness", "FoodEstablishment"):
-                    has_local_schema = True
+                # Handle @graph arrays: {"@graph": [{"@type": "LocalBusiness", ...}]}
+                items = data if isinstance(data, list) else data.get("@graph", [data])
+                for item in (items if isinstance(items, list) else [items]):
+                    st = item.get("@type", "")
+                    # @type can itself be a list in some implementations
+                    if isinstance(st, list):
+                        st = st[0] if st else ""
+                    if st:
+                        schema_types.append(st)
+                    if st in LOCAL_SCHEMA_TYPES:
+                        has_local_schema = True
             except Exception:
                 pass
         signals["has_local_schema"] = has_local_schema
@@ -356,13 +387,20 @@ class SEOScraper:
             wins.append(f"{len(internal_links)} internal links found")
 
         # ── 13. Word Count ────────────────────────────────────────────────────
-        words = page_text.split()
-        signals["word_count"] = len(words)
+        # Count visible content only — soup.get_text() includes <script>/<style>
+        # text which inflates counts. Iterate NavigableStrings and skip non-visible.
+        _SKIP_TAGS = {"script", "style", "head", "title", "[document]"}
+        visible_words = []
+        for element in soup.find_all(string=True):
+            if element.parent.name not in _SKIP_TAGS:
+                visible_words.extend(element.strip().split())
+        signals["word_count"] = len(visible_words)
         if not content_unverifiable:
-            if len(words) < 300:
-                issues.append({"severity": "medium", "text": f"Very thin content ({len(words)} words). Pages with 300+ words rank much better — describe your services in detail"})
-            elif len(words) > 500:
-                wins.append(f"Good content depth ({len(words)} words)")
+            wc = len(visible_words)
+            if wc < 300:
+                issues.append({"severity": "medium", "text": f"Very thin content ({wc} words). Pages with 300+ words rank much better — describe your services in detail"})
+            elif wc > 500:
+                wins.append(f"Good content depth ({wc} words)")
 
         # ── 14. Open Graph Tags ───────────────────────────────────────────────
         og_title = soup.find("meta", property="og:title")
@@ -377,7 +415,19 @@ class SEOScraper:
             wins.append("Open Graph tags present (good social sharing)")
 
         # ── 15. Favicon ───────────────────────────────────────────────────────
+        # Check <link rel="icon"> first; fall back to /favicon.ico HEAD request
+        # (many sites serve it at the root without any <link> tag)
         favicon = soup.find("link", rel=lambda r: r and "icon" in " ".join(r).lower())
+        if not favicon:
+            try:
+                _base = urlparse(result["final_url"])
+                _fav_url = f"{_base.scheme}://{_base.netloc}/favicon.ico"
+                _fav_resp = requests.head(_fav_url, headers=HEADERS, timeout=4,
+                                          allow_redirects=True)
+                if _fav_resp.status_code == 200:
+                    favicon = True  # truthy sentinel
+            except Exception:
+                pass
         signals["has_favicon"] = bool(favicon)
         if not favicon:
             issues.append({"severity": "low", "text": "No favicon detected — a favicon improves brand recognition in browser tabs and Google results"})
