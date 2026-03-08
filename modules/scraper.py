@@ -50,7 +50,7 @@ class SEOScraper:
             return result
 
         html = resp.text
-        soup = BeautifulSoup(html, "lxml")
+        soup = BeautifulSoup(html, "html.parser")
 
         signals = {}
         issues = []
@@ -276,7 +276,7 @@ class SEOScraper:
         try:
             search_url = f"https://www.google.com/search?q={requests.utils.quote(query)}&num=10"
             resp = requests.get(search_url, headers=HEADERS, timeout=10)
-            soup = BeautifulSoup(resp.text, "lxml")
+            soup = BeautifulSoup(resp.text, "html.parser")
 
             # Extract organic result links
             for a in soup.select("a[href]"):
