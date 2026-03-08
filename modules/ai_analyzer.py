@@ -11,8 +11,13 @@ import anthropic
 
 class AIAnalyzer:
     def __init__(self):
-        self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        self.model = "claude-opus-4-6"
+        # Use a 120s timeout so failures return a clean JSON error
+        # instead of letting gunicorn kill the worker with a non-JSON 502
+        self.client = anthropic.Anthropic(
+            api_key=os.getenv("ANTHROPIC_API_KEY"),
+            timeout=120.0,
+        )
+        self.model = "claude-sonnet-4-5"
 
     def generate_report(
         self,
@@ -29,7 +34,7 @@ class AIAnalyzer:
 
         message = self.client.messages.create(
             model=self.model,
-            max_tokens=8000,
+            max_tokens=4000,
             messages=[{"role": "user", "content": prompt}],
         )
 
