@@ -688,6 +688,13 @@
         return;
       }
       $('download-link').href = `/api/audit/download/${state.auditId}`;
+      // Google Ads conversion: SEO Audit Purchase
+      gtag('event', 'conversion', {
+        'send_to': 'AW-18000868404/hvAnCL_lgoUcELTovYdD',
+        'value': 49.0,
+        'currency': 'USD',
+        'transaction_id': paymentIntentId
+      });
       showStep('step-done');
     } catch(err) {
       completeSteps();
