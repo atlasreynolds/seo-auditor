@@ -28,6 +28,16 @@ def index():
     return render_template("index.html", stripe_key=STRIPE_PUBLISHABLE_KEY)
 
 
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
+
+@app.route("/terms")
+def terms():
+    return render_template("terms.html")
+
+
 @app.route("/api/audit/preview", methods=["POST"])
 def audit_preview():
     """Run a free preview (limited data) to hook the user before payment."""
