@@ -152,7 +152,7 @@ def confirm_payment():
         competitor_data = []
         for comp_url in competitors[:3]:
             try:
-                comp_analysis = scraper.analyze(comp_url)
+                comp_analysis = scraper.analyze(comp_url, quick=True)
                 competitor_data.append(comp_analysis)
             except Exception:
                 pass

@@ -56,10 +56,11 @@ NAP_FALLBACK_PATHS = ["/contact", "/contact-us", "/about", "/about-us",
 
 
 class SEOScraper:
-    def analyze(self, url: str) -> dict:
+    def analyze(self, url: str, quick: bool = False) -> dict:
         """
         Fetch a URL and return a structured dict of SEO signals.
         Returns a score (0–100) and a list of issues.
+        quick=True skips slow secondary-page NAP fallback (used for competitors).
         """
         result = {
             "url": url,
@@ -290,7 +291,8 @@ class SEOScraper:
         )
 
         # ── Secondary page fallback for unverifiable / thin content ───────────
-        if content_unverifiable or (not phones and not has_address):
+        # Skipped in quick mode (competitor scans) to prevent timeouts
+        if not quick and (content_unverifiable or (not phones and not has_address)):
             sec_text, sec_tel = self._fetch_secondary_nap(url)
             if sec_text:
                 if not phones:
@@ -418,10 +420,12 @@ class SEOScraper:
         base = urlparse(url)
         combined_text = ""
         combined_tel = []
+        phone_re = re.compile(r'\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}')
+        zip_re   = re.compile(r'\b\d{5}(?:-\d{4})?\b')
         for path in NAP_FALLBACK_PATHS:
             try:
                 test_url = f"{base.scheme}://{base.netloc}{path}"
-                resp = requests.get(test_url, headers=HEADERS, timeout=8, allow_redirects=True)
+                resp = requests.get(test_url, headers=HEADERS, timeout=5, allow_redirects=True)
                 if resp.status_code == 200 and len(resp.text) > 500:
                     page_soup = BeautifulSoup(resp.text, "html.parser")
                     page_lower = resp.text.lower()
@@ -431,6 +435,9 @@ class SEOScraper:
                     for a in page_soup.find_all("a", href=re.compile(r'^tel:', re.I)):
                         if a.get("href"):
                             combined_tel.append(a["href"].replace("tel:", "").strip())
+                    # Early exit once we have both a phone and an address
+                    if (combined_tel or phone_re.search(combined_text)) and zip_re.search(combined_text):
+                        break
             except Exception:
                 continue
         return combined_text.strip(), combined_tel
