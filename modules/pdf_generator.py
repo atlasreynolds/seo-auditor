@@ -134,10 +134,9 @@ class PDFGenerator:
         story += self._content_section(ai_report, styles)
         story.append(PageBreak())
 
-        # Competitor Analysis
-        if competitor_data:
-            story += self._competitor_section(site_data, competitor_data, ai_report, styles)
-            story.append(Spacer(1, 0.2 * inch))
+        # Competitor Analysis (always shown — fallback message if data unavailable)
+        story += self._competitor_section(site_data, competitor_data, ai_report, styles)
+        story.append(Spacer(1, 0.2 * inch))
 
         # Strengths
         story += self._wins_section(site_data, styles)
@@ -575,23 +574,23 @@ class PDFGenerator:
     # ── Keywords ─────────────────────────────────────────────────────────────
     def _keywords_section(self, ai_report, styles):
         keywords = [_clean(k) for k in ai_report.get("keyword_recommendations", []) if k]
-        if not keywords:
-            return []
 
         elements = [
             Spacer(1, 0.1 * inch),
             Paragraph("Keyword Recommendations", styles["h2"]),
             HRFlowable(width="100%", thickness=2, color=BRAND_ACCENT, spaceAfter=10),
-            Paragraph("Use these keyword phrases in your title tag, meta description, H1, and page content:",
+            Paragraph("Use these keyword phrases in your title tag, meta description, H1, and page content "
+                      "to attract more local customers searching on Google:",
                       styles["body"]),
             Spacer(1, 0.05 * inch),
         ]
-        cells = []
-        for i in range(0, len(keywords), 2):
-            row = [Paragraph(f"→  {keywords[i]}", styles["body"]),
-                   Paragraph(f"→  {keywords[i+1]}", styles["body"]) if i + 1 < len(keywords) else Paragraph("", styles["body"])]
-            cells.append(row)
-        if cells:
+
+        if keywords:
+            cells = []
+            for i in range(0, len(keywords), 2):
+                row = [Paragraph(f"→  {keywords[i]}", styles["body"]),
+                       Paragraph(f"→  {keywords[i+1]}", styles["body"]) if i + 1 < len(keywords) else Paragraph("", styles["body"])]
+                cells.append(row)
             t = Table(cells, colWidths=[3.5 * inch, 3.5 * inch],
                       style=TableStyle([
                           ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eff6ff")),
@@ -601,6 +600,44 @@ class PDFGenerator:
                           ("LINEBELOW", (0, 0), (-1, -2), 0.5, BRAND_BORDER),
                       ]))
             elements.append(t)
+        else:
+            # Fallback: show a generic tip box so the section is never blank
+            fallback_tips = [
+                "→  [Your City] + [Your Service] (e.g., 'plumber in Austin')",
+                "→  Best [service] in [city] (e.g., 'best pizza in Denver')",
+                "→  [Service] near me + [neighborhood]",
+                "→  [City] [service] reviews / affordable [service] [city]",
+            ]
+            cells = [[Paragraph(tip, styles["body"])] for tip in fallback_tips]
+            note = Table(
+                [[Paragraph(
+                    "⚠  Keyword recommendations require a successful AI analysis. "
+                    "The generic templates above show the pattern to follow — update your audit "
+                    "to generate business-specific phrases.",
+                    ParagraphStyle("kwnote", fontSize=9, fontName="Helvetica",
+                                   textColor=colors.HexColor("#92400e"), spaceAfter=0)
+                )]],
+                colWidths=[7 * inch],
+                style=TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fefce8")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("LINEBEFORE", (0, 0), (0, -1), 3, BRAND_WARNING),
+                ])
+            )
+            elements.append(note)
+            elements.append(Spacer(1, 0.06 * inch))
+            t = Table(cells, colWidths=[7 * inch],
+                      style=TableStyle([
+                          ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eff6ff")),
+                          ("TOPPADDING", (0, 0), (-1, -1), 5),
+                          ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                          ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                          ("LINEBELOW", (0, 0), (-1, -2), 0.5, BRAND_BORDER),
+                      ]))
+            elements.append(t)
+
         return elements
 
     # ── Google Business Profile ───────────────────────────────────────────────
@@ -696,7 +733,7 @@ class PDFGenerator:
     # ── Competitor Analysis ───────────────────────────────────────────────────
     def _competitor_section(self, site_data, competitor_data, ai_report, styles):
         elements = [
-            Paragraph("Competitor Analysis", styles["h2"]),
+            Paragraph("Competitor Comparison", styles["h2"]),
             HRFlowable(width="100%", thickness=2, color=BRAND_DARK, spaceAfter=10),
         ]
 
@@ -704,54 +741,134 @@ class PDFGenerator:
             return "✓" if val else "✗"
 
         your_raw = site_data.get("raw", {})
-        header = [Paragraph("<b>Signal</b>", styles["caption"]),
-                  Paragraph("<b>Your Site</b>", styles["caption"])]
-        for i, comp in enumerate(competitor_data[:3], 1):
-            header.append(Paragraph(f"<b>Comp. {i}</b>", styles["caption"]))
 
-        signals_to_compare = [
-            ("SEO Score",    str(site_data.get("overall_score", 0)),
-             [str(c.get("overall_score", 0)) for c in competitor_data[:3]]),
-            ("HTTPS",        yn(your_raw.get("https")),
-             [yn(c.get("raw", {}).get("https")) for c in competitor_data[:3]]),
-            ("Schema Markup", yn(your_raw.get("has_local_schema")),
-             [yn(c.get("raw", {}).get("has_local_schema")) for c in competitor_data[:3]]),
-            ("Phone on Page", yn(your_raw.get("phone_numbers")),
-             [yn(c.get("raw", {}).get("phone_numbers")) for c in competitor_data[:3]]),
-            ("Map Embed",    yn(your_raw.get("has_map_embed")),
-             [yn(c.get("raw", {}).get("has_map_embed")) for c in competitor_data[:3]]),
-            ("Reviews",      yn(your_raw.get("has_reviews_mention")),
-             [yn(c.get("raw", {}).get("has_reviews_mention")) for c in competitor_data[:3]]),
-            ("Word Count",   str(your_raw.get("word_count", 0)),
-             [str(c.get("raw", {}).get("word_count", 0)) for c in competitor_data[:3]]),
-        ]
+        if competitor_data:
+            # ── Side-by-side comparison table ─────────────────────────────────
+            elements.append(Paragraph(
+                "Here is how your site stacks up against the top local competitors Google returned "
+                "for your business category and city:",
+                styles["body"]
+            ))
+            elements.append(Spacer(1, 0.08 * inch))
 
-        table_data = [header]
-        for sig_name, your_val, comp_vals in signals_to_compare:
-            row = [Paragraph(sig_name, styles["caption"]),
-                   Paragraph(your_val, styles["caption"])]
-            for cv in comp_vals:
-                row.append(Paragraph(cv, styles["caption"]))
-            table_data.append(row)
+            header = [Paragraph("<b>Signal</b>", styles["caption"]),
+                      Paragraph("<b>Your Site</b>", styles["caption"])]
+            for i, comp in enumerate(competitor_data[:3], 1):
+                domain = comp.get("url", f"Competitor {i}")
+                try:
+                    from urllib.parse import urlparse
+                    domain = urlparse(domain).netloc or domain
+                except Exception:
+                    pass
+                header.append(Paragraph(f"<b>{domain[:18]}</b>", styles["caption"]))
 
-        n_cols = 2 + min(len(competitor_data), 3)
-        col_w = 7.0 / n_cols
-        t = Table(table_data, colWidths=[col_w * inch] * n_cols,
-                  style=TableStyle([
-                      ("BACKGROUND", (0, 0), (-1, 0), BRAND_DARK),
-                      ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
-                      ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, BRAND_LIGHT_BG]),
-                      ("TOPPADDING", (0, 0), (-1, -1), 6),
-                      ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                      ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                      ("GRID", (0, 0), (-1, -1), 0.5, BRAND_BORDER),
-                  ]))
-        elements.append(t)
+            signals_to_compare = [
+                ("SEO Score",     str(site_data.get("overall_score", 0)),
+                 [str(c.get("overall_score", 0)) for c in competitor_data[:3]]),
+                ("HTTPS",         yn(your_raw.get("https")),
+                 [yn(c.get("raw", {}).get("https")) for c in competitor_data[:3]]),
+                ("Schema Markup", yn(your_raw.get("has_local_schema")),
+                 [yn(c.get("raw", {}).get("has_local_schema")) for c in competitor_data[:3]]),
+                ("Phone on Page", yn(your_raw.get("phone_numbers")),
+                 [yn(c.get("raw", {}).get("phone_numbers")) for c in competitor_data[:3]]),
+                ("Map Embed",     yn(your_raw.get("has_map_embed")),
+                 [yn(c.get("raw", {}).get("has_map_embed")) for c in competitor_data[:3]]),
+                ("Reviews",       yn(your_raw.get("has_reviews_mention")),
+                 [yn(c.get("raw", {}).get("has_reviews_mention")) for c in competitor_data[:3]]),
+                ("Word Count",    str(your_raw.get("word_count", 0)),
+                 [str(c.get("raw", {}).get("word_count", 0)) for c in competitor_data[:3]]),
+            ]
 
+            table_data = [header]
+            for sig_name, your_val, comp_vals in signals_to_compare:
+                row = [Paragraph(sig_name, styles["caption"]),
+                       Paragraph(your_val, styles["caption"])]
+                for cv in comp_vals:
+                    row.append(Paragraph(cv, styles["caption"]))
+                table_data.append(row)
+
+            n_cols = 2 + min(len(competitor_data), 3)
+            col_w = 7.0 / n_cols
+            t = Table(table_data, colWidths=[col_w * inch] * n_cols,
+                      style=TableStyle([
+                          ("BACKGROUND", (0, 0), (-1, 0), BRAND_DARK),
+                          ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+                          ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                          ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, BRAND_LIGHT_BG]),
+                          ("TOPPADDING", (0, 0), (-1, -1), 6),
+                          ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                          ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                          ("GRID", (0, 0), (-1, -1), 0.5, BRAND_BORDER),
+                      ]))
+            elements.append(t)
+
+        else:
+            # ── Fallback: no competitor data retrieved ─────────────────────────
+            no_data_note = Table(
+                [[Paragraph(
+                    "⚠  Automated competitor discovery was unavailable for this audit — "
+                    "Google's search results page was not accessible during the scan. "
+                    "The gaps analysis below is still generated from industry benchmarks for your category.",
+                    ParagraphStyle("cnote", fontSize=9, fontName="Helvetica",
+                                   textColor=colors.HexColor("#92400e"), spaceAfter=0)
+                )]],
+                colWidths=[7 * inch],
+                style=TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fefce8")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("LINEBEFORE", (0, 0), (0, -1), 3, BRAND_WARNING),
+                ])
+            )
+            elements.append(no_data_note)
+            elements.append(Spacer(1, 0.1 * inch))
+
+            # Show "what to look for" table as a research guide
+            elements.append(Paragraph("What to Look For When Researching Competitors Manually:",
+                                       styles["h3"]))
+            guide_rows = [
+                ["Signal to Check", "Why It Matters"],
+                ["Google Business Profile — completeness, photos, reviews",
+                 "GBP is the #1 local ranking factor"],
+                ["Title tags — do they include city + service?",
+                 "City keywords drive local intent traffic"],
+                ["LocalBusiness schema markup on their homepage",
+                 "Schema helps Google understand what they do"],
+                ["Word count of their homepage or service pages",
+                 "More content = more keyword coverage"],
+                ["Number of Google reviews and average star rating",
+                 "Reviews directly influence map pack placement"],
+                ["Map embed on their contact or location page",
+                 "Signals physical location to Google"],
+            ]
+            guide_table = Table(
+                [[Paragraph(r[0], styles["caption"]),
+                  Paragraph(r[1], styles["caption"])] for r in guide_rows],
+                colWidths=[3.8 * inch, 3.2 * inch],
+                style=TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), BRAND_DARK),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, BRAND_LIGHT_BG]),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("GRID", (0, 0), (-1, -1), 0.5, BRAND_BORDER),
+                ])
+            )
+            elements.append(guide_table)
+
+        # ── Competitive Gaps (from AI — always shown if available) ─────────────
         gaps = [_clean(g) for g in ai_report.get("competitor_gaps", []) if g]
         if gaps:
             elements.append(Spacer(1, 0.12 * inch))
             elements.append(Paragraph("Competitive Gaps to Close", styles["h3"]))
+            elements.append(Paragraph(
+                "Based on your audit data and industry benchmarks, these are the areas where "
+                "competitors are likely outranking you:",
+                styles["body"]
+            ))
             for gap in gaps:
                 elements.append(Paragraph(f"• {gap}", styles["bullet"]))
 
