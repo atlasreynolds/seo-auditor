@@ -279,7 +279,8 @@ class PDFGenerator:
             style=TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"),
                                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                               ("BOTTOMPADDING", (0, 0), (-1, -1), 4)])
+                               ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                               ("BOTTOMPADDING", (0, 0), (0, 0), 10)])
         )
 
         wins_inner = Table(
@@ -291,7 +292,8 @@ class PDFGenerator:
             style=TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"),
                                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                               ("BOTTOMPADDING", (0, 0), (-1, -1), 4)])
+                               ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                               ("BOTTOMPADDING", (0, 0), (0, 0), 10)])
         )
 
         score_table = Table(
@@ -495,10 +497,12 @@ class PDFGenerator:
                 [[Paragraph(f"#{priority}", ParagraphStyle("pr", fontSize=11,
                                                             fontName="Helvetica-Bold",
                                                             textColor=WHITE, alignment=TA_CENTER))]],
-                colWidths=[0.35 * inch],
+                colWidths=[0.45 * inch],
                 style=TableStyle([("BACKGROUND", (0, 0), (-1, -1), BRAND_BLUE),
                                    ("TOPPADDING", (0, 0), (-1, -1), 6),
-                                   ("BOTTOMPADDING", (0, 0), (-1, -1), 6)])
+                                   ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                                   ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                                   ("RIGHTPADDING", (0, 0), (-1, -1), 4)])
             )
             imp_badge = Table(
                 [[Paragraph(impact, ParagraphStyle("imp", fontSize=8, fontName="Helvetica-Bold",
@@ -513,7 +517,7 @@ class PDFGenerator:
                 [[badge, Paragraph(f"<b>{task}</b>",
                                    ParagraphStyle("tsk", fontSize=11, fontName="Helvetica-Bold",
                                                   textColor=BRAND_DARK)), imp_badge]],
-                colWidths=[0.45 * inch, 5.8 * inch, 0.75 * inch],
+                colWidths=[0.55 * inch, 5.7 * inch, 0.75 * inch],
                 style=TableStyle([
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                     ("BACKGROUND", (0, 0), (-1, -1), BRAND_LIGHT_BG),
