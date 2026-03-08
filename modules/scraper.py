@@ -7,7 +7,7 @@ Also discovers top competitors via Google search.
 import re
 import time
 import json
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, parse_qs, unquote
 import requests
 from bs4 import BeautifulSoup
 
@@ -461,11 +461,21 @@ class SEOScraper:
         # ── DuckDuckGo HTML (primary — works from server IPs) ─────────────────
         try:
             ddg_url = f"https://html.duckduckgo.com/html/?q={requests.utils.quote(query)}"
-            ddg_headers = {**HEADERS, "Referer": "https://duckduckgo.com/"}
+            # Strip Accept-Encoding so requests auto-decompresses DDG's response
+            ddg_headers = {k: v for k, v in HEADERS.items() if k != "Accept-Encoding"}
+            ddg_headers["Referer"] = "https://duckduckgo.com/"
             resp = requests.get(ddg_url, headers=ddg_headers, timeout=10)
             soup = BeautifulSoup(resp.text, "html.parser")
             for a in soup.select("a.result__a"):
                 href = a.get("href", "")
+                # DDG wraps links as //duckduckgo.com/l/?uddg=<encoded-url>&rut=...
+                # Unwrap to get the actual destination URL
+                if "uddg=" in href:
+                    try:
+                        qs = parse_qs(urlparse("https:" + href if href.startswith("//") else href).query)
+                        href = unquote(qs.get("uddg", [""])[0])
+                    except Exception:
+                        href = ""
                 if href and _is_valid(href):
                     urls.append(href)
                     if len(urls) >= 5:
