@@ -16,10 +16,25 @@ HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
+        "Chrome/122.0.0.0 Safari/537.36"
     ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
 }
+
+# Indicators that the page is a bot-protection challenge, not real content
+BOT_PROTECTION_SIGNALS = [
+    "just a moment", "checking your browser", "cf-browser-verification",
+    "cf-challenge", "ddos-guard", "enable javascript and cookies",
+    "verify you are human", "please wait", "ray id",
+]
 
 TIMEOUT = 15
 
@@ -52,9 +67,30 @@ class SEOScraper:
         html = resp.text
         soup = BeautifulSoup(html, "html.parser")
 
+        # ── Bot / Cloudflare protection check ────────────────────────────────
+        html_lower = html.lower()
+        title_tag_early = soup.find("title")
+        title_lower = title_tag_early.get_text().lower() if title_tag_early else ""
+        bot_protected = any(
+            sig in title_lower or sig in html_lower
+            for sig in BOT_PROTECTION_SIGNALS
+        )
+        result["bot_protected"] = bot_protected
+
         signals = {}
         issues = []
         wins = []
+
+        if bot_protected:
+            issues.append({
+                "severity": "critical",
+                "text": (
+                    "Bot protection detected (likely Cloudflare) — Google's crawler and your "
+                    "customers may be seeing a challenge page instead of your actual website. "
+                    "This could be severely limiting your search visibility. Contact your hosting "
+                    "provider to whitelist Googlebot, or disable the challenge for regular visitors."
+                )
+            })
 
         # ── 1. HTTPS ────────────────────────────────────────────────────────
         uses_https = result["final_url"].startswith("https://")
@@ -169,14 +205,35 @@ class SEOScraper:
 
         # ── 10. NAP (Name, Address, Phone) ────────────────────────────────────
         page_text = soup.get_text(" ", strip=True)
-        phone_pattern = re.compile(
-            r'(\+?1?\s?[\-\.]?\(?\d{3}\)?[\s\-\.]?\d{3}[\s\-\.]?\d{4})'
-        )
-        phones = phone_pattern.findall(page_text)
-        signals["phone_numbers"] = phones[:3]
 
-        address_keywords = ["street", "st.", "ave", "avenue", "blvd", "drive", "dr.", "road", "rd.", "suite", "ste"]
-        has_address = any(kw in page_text.lower() for kw in address_keywords)
+        # Phone: check visible text patterns AND tel: href links
+        phone_pattern = re.compile(
+            r'(\+?1?[\s\-\.]?\(?\d{3}\)?[\s\-\.]?\d{3}[\s\-\.]?\d{4})'
+        )
+        text_phones = phone_pattern.findall(page_text)
+        tel_links = soup.find_all("a", href=re.compile(r'^tel:', re.I))
+        tel_phones = [
+            a["href"].replace("tel:", "").replace("tel:+1", "+1").strip()
+            for a in tel_links if a.get("href")
+        ]
+        phones = list(dict.fromkeys(tel_phones + text_phones))[:3]  # dedup, tel: first
+        signals["phone_numbers"] = phones
+
+        # Address: check text keywords, zip codes, AND microdata/schema
+        address_keywords = [
+            "street", "st.", "st,", "ave", "avenue", "blvd", "boulevard",
+            "drive", "dr.", "dr,", "road", "rd.", "rd,", "suite", "ste",
+            "lane", "ln.", "court", "ct.", "place", "pl.", "way", "hwy",
+            "highway", "pkwy", "parkway", "floor", "building",
+        ]
+        zip_pattern = re.compile(r'\b\d{5}(?:-\d{4})?\b')
+        has_zip = bool(zip_pattern.search(page_text))
+        addr_microdata = soup.find(attrs={"itemprop": re.compile(r'streetAddress|address', re.I)})
+        has_address = (
+            has_zip
+            or bool(addr_microdata)
+            or any(kw in page_text.lower() for kw in address_keywords)
+        )
         signals["has_address_on_page"] = has_address
 
         if not phones:
