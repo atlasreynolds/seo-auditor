@@ -437,35 +437,58 @@ class SEOScraper:
 
     def find_competitors(self, business_name: str, city: str, category: str) -> list[str]:
         """
-        Find top competitor URLs via Google search scraping.
-        Falls back gracefully if blocked.
+        Find top competitor URLs via DuckDuckGo HTML search (more bot-friendly than Google).
+        Falls back to Google scraping if DDG returns nothing.
         """
         query = f"{category} {city} near me"
         urls = []
 
-        try:
-            search_url = f"https://www.google.com/search?q={requests.utils.quote(query)}&num=10"
-            resp = requests.get(search_url, headers=HEADERS, timeout=10)
-            soup = BeautifulSoup(resp.text, "html.parser")
+        skip_domains = [
+            "google.com", "youtube.com", "facebook.com", "yelp.com",
+            "yellowpages.com", "bbb.org", "wikipedia.org", "reddit.com",
+            "tripadvisor.com", "instagram.com", "twitter.com", "x.com",
+            "bing.com", "duckduckgo.com", "linkedin.com", "mapquest.com",
+        ]
 
-            # Extract organic result links
-            for a in soup.select("a[href]"):
-                href = a["href"]
-                if href.startswith("/url?q="):
-                    actual_url = href.split("/url?q=")[1].split("&")[0]
-                    parsed = urlparse(actual_url)
-                    if parsed.scheme in ("http", "https") and parsed.netloc:
-                        # Skip known non-business sites
-                        skip_domains = ["google.com", "youtube.com", "facebook.com",
-                                        "yelp.com", "yellowpages.com", "bbb.org",
-                                        "wikipedia.org", "reddit.com"]
-                        if not any(d in parsed.netloc for d in skip_domains):
+        def _is_valid(u):
+            try:
+                p = urlparse(u)
+                return (p.scheme in ("http", "https") and p.netloc
+                        and not any(d in p.netloc for d in skip_domains))
+            except Exception:
+                return False
+
+        # ── DuckDuckGo HTML (primary — works from server IPs) ─────────────────
+        try:
+            ddg_url = f"https://html.duckduckgo.com/html/?q={requests.utils.quote(query)}"
+            ddg_headers = {**HEADERS, "Referer": "https://duckduckgo.com/"}
+            resp = requests.get(ddg_url, headers=ddg_headers, timeout=10)
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for a in soup.select("a.result__a"):
+                href = a.get("href", "")
+                if href and _is_valid(href):
+                    urls.append(href)
+                    if len(urls) >= 5:
+                        break
+        except Exception:
+            pass
+
+        # ── Google fallback (may be blocked from cloud IPs) ───────────────────
+        if not urls:
+            try:
+                search_url = f"https://www.google.com/search?q={requests.utils.quote(query)}&num=10"
+                resp = requests.get(search_url, headers=HEADERS, timeout=10)
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for a in soup.select("a[href]"):
+                    href = a["href"]
+                    if href.startswith("/url?q="):
+                        actual_url = href.split("/url?q=")[1].split("&")[0]
+                        if _is_valid(actual_url):
                             urls.append(actual_url)
                             if len(urls) >= 5:
                                 break
-
-        except Exception:
-            pass
+            except Exception:
+                pass
 
         return urls[:3]
 
